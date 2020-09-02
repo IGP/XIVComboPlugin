@@ -83,4 +83,11 @@
     </PackageReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>if $(ConfigurationName) == Release (
+cd %25appdata%25\XIVLauncher\installedPlugins\XIVCombo\1.0.3.6
+move $(TargetPath) XIVCombo.dll
+)
+</PostBuildEvent>
+  </PropertyGroup>
 </Project>
