@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Dalamud.Game;
 using Dalamud.Game.ClientState;
@@ -7,10 +8,6 @@ using Dalamud.Game.ClientState.Structs.JobGauge;
 using Dalamud.Hooking;
 using XIVComboPlugin.JobActions;
 using Serilog;
-using System.Threading.Tasks;
-using System.Threading;
-using Dalamud.Plugin;
-using System.Dynamic;
 
 namespace XIVComboPlugin
 {
@@ -19,8 +16,6 @@ namespace XIVComboPlugin
         public delegate ulong OnCheckIsIconReplaceableDelegate(uint actionID);
 
         public delegate ulong OnGetIconDelegate(byte param1, uint param2);
-
-        private IntPtr activeBuffArray = IntPtr.Zero;
 
         private readonly IconReplacerAddressResolver Address;
         private readonly Hook<OnCheckIsIconReplaceableDelegate> checkerHook;
@@ -41,7 +36,6 @@ namespace XIVComboPlugin
         private readonly IntPtr playerJob;
         private uint lastJob = 0;
 
-        private readonly IntPtr BuffVTableAddr;
         private float ping;
 
         private unsafe delegate int* getArray(long* address);
@@ -64,7 +58,6 @@ namespace XIVComboPlugin
             playerLevel = scanner.GetStaticAddressFromSig("E8 ?? ?? ?? ?? 88 45 EF", 0x4d) + 0x78;
             playerJob = playerLevel - 0xE;
             */
-            BuffVTableAddr = scanner.GetStaticAddressFromSig("48 89 05 ?? ?? ?? ?? 88 05 ?? ?? ?? ?? 88 05 ?? ?? ?? ??", 0);
 
             customIds = new HashSet<uint>();
             vanillaIds = new HashSet<uint>();
@@ -83,11 +76,6 @@ namespace XIVComboPlugin
             iconHook = new Hook<OnGetIconDelegate>(Address.GetIcon, new OnGetIconDelegate(GetIconDetour), this);
             checkerHook = new Hook<OnCheckIsIconReplaceableDelegate>(Address.IsIconReplaceable,
                 new OnCheckIsIconReplaceableDelegate(CheckIsIconReplaceableDetour), this);
-
-            Task.Run(() =>
-            {
-                BuffTask();
-            });
         }
 
         public void Enable()
@@ -120,14 +108,6 @@ namespace XIVComboPlugin
                     noUpdateIcons.Remove(id);
                 if (seenNoUpdate.Contains(id))
                     seenNoUpdate.Remove(id);
-            }
-        }
-        private async void BuffTask()
-        {
-            while (!shutdown)
-            {
-                UpdateBuffAddress();
-                await Task.Delay(1000);
             }
         }
 
@@ -172,7 +152,6 @@ namespace XIVComboPlugin
             }
             if (vanillaIds.Contains(actionID)) return iconHook.Original(self, actionID);
             if (!customIds.Contains(actionID)) return actionID;
-            if (activeBuffArray == IntPtr.Zero) return iconHook.Original(self, actionID);
 
             // Don't clutter the spaghetti any worse than it already is.
             var lastMove = Marshal.ReadInt32(lastComboMove);
@@ -185,7 +164,6 @@ namespace XIVComboPlugin
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.DragoonJumpFeature))
                 if (actionID == DRG.Jump)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1243))
                         return DRG.MirageDive;
                     if (level >= 74)
@@ -232,7 +210,6 @@ namespace XIVComboPlugin
                         if (lastMove == DRG.Disembowel && level >= 50) 
                             return DRG.ChaosThrust;
                     }
-                    UpdateBuffAddress();
                     if (SearchBuffArray(802) && level >= 56)
                         return DRG.FangAndClaw;
                     if (SearchBuffArray(803) && level >= 58)
@@ -256,7 +233,6 @@ namespace XIVComboPlugin
                         if (lastMove == DRG.VorpalThrust && level >= 26)
                             return DRG.FullThrust;
                     }
-                    UpdateBuffAddress();
                     if (SearchBuffArray(802) && level >= 56)
                         return DRG.FangAndClaw;
                     if (SearchBuffArray(803) && level >= 58)
@@ -400,7 +376,6 @@ namespace XIVComboPlugin
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.SamuraiYukikazeCombo))
                 if (actionID == SAM.Yukikaze)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1233))
                         return SAM.Yukikaze;
                     if (comboTime > 0)
@@ -413,7 +388,6 @@ namespace XIVComboPlugin
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.SamuraiGekkoCombo))
                 if (actionID == SAM.Gekko)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1233))
                         return SAM.Gekko;
                     if (comboTime > 0)
@@ -431,7 +405,6 @@ namespace XIVComboPlugin
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.SamuraiKashaCombo))
                 if (actionID == SAM.Kasha)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1233))
                         return SAM.Kasha;
                     if (comboTime > 0)
@@ -449,7 +422,6 @@ namespace XIVComboPlugin
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.SamuraiMangetsuCombo))
                 if (actionID == SAM.Mangetsu)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1233))
                         return SAM.Mangetsu;
                     if (comboTime > 0)
@@ -462,7 +434,6 @@ namespace XIVComboPlugin
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.SamuraiOkaCombo))
                 if (actionID == SAM.Oka)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1233))
                         return SAM.Oka;
                     if (comboTime > 0)
@@ -474,7 +445,6 @@ namespace XIVComboPlugin
             // Turn Seigan into Third Eye when not procced
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.SamuraiThirdEyeFeature))
                 if (actionID == SAM.Seigan) {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1252)) return SAM.Seigan;
                     return SAM.ThirdEye;
                 }
@@ -525,7 +495,6 @@ namespace XIVComboPlugin
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.NinjaAssassinateFeature))
                 if (actionID == NIN.DWAD)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1955)) return NIN.Assassinate;
                     return NIN.DWAD;
                 }
@@ -555,7 +524,6 @@ namespace XIVComboPlugin
                     {
                         if (level >= GNB.LevelContinuation)
                         {
-                            UpdateBuffAddress();
                             if (SearchBuffArray(GNB.BuffReadyToRip))
                                 return GNB.JugularRip;
                             if (SearchBuffArray(GNB.BuffReadyToTear))
@@ -778,7 +746,6 @@ namespace XIVComboPlugin
                     if (gauge.TimerRemaining > 0)
                         if (gauge.IsPhoenixReady())
                         {
-                            UpdateBuffAddress();
                             if (SearchBuffArray(1867))
                                 return SMN.BrandOfPurgatory;
                             return SMN.FountainOfFire;
@@ -836,7 +803,6 @@ namespace XIVComboPlugin
             {
                 if (actionID == DNC.Bloodshower)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1817))
                         return DNC.Bloodshower;
                     return DNC.Bladeshower;
@@ -844,7 +810,6 @@ namespace XIVComboPlugin
 
                 if (actionID == DNC.RisingWindmill)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1816))
                         return DNC.RisingWindmill;
                     return DNC.Windmill;
@@ -856,7 +821,6 @@ namespace XIVComboPlugin
             {
                 if (actionID == DNC.FanDance1)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1820))
                         return DNC.FanDance3;
                     return DNC.FanDance1;
@@ -865,7 +829,6 @@ namespace XIVComboPlugin
                 // Fan Dance 2 changes into Fan Dance 3 while flourishing.
                 if (actionID == DNC.FanDance2)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1820))
                         return DNC.FanDance3;
                     return DNC.FanDance2;
@@ -907,7 +870,6 @@ namespace XIVComboPlugin
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.BardStraightShotUpgradeFeature))
                 if (actionID == BRD.HeavyShot || actionID == BRD.BurstShot)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(122))
                     {
                         if (level >= 70) return BRD.RefulgentArrow;
@@ -923,7 +885,6 @@ namespace XIVComboPlugin
             if (Configuration.ComboPresets.HasFlag(CustomComboPreset.MnkAoECombo))
                 if (actionID == MNK.Rockbreaker)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(110)) return MNK.Rockbreaker;
                     if (SearchBuffArray(107)) return MNK.AOTD;
                     if (SearchBuffArray(108)) return MNK.FourPointFury;
@@ -938,7 +899,6 @@ namespace XIVComboPlugin
             {
                 if (actionID == RDM.Veraero2)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(167) || SearchBuffArray(1249))
                     {
                         if (level >= 66) return RDM.Impact;
@@ -949,7 +909,6 @@ namespace XIVComboPlugin
 
                 if (actionID == RDM.Verthunder2)
                 {
-                    UpdateBuffAddress();
                     if (SearchBuffArray(167) || SearchBuffArray(1249))
                     {
                         if (level >= 66) return RDM.Impact;
@@ -988,7 +947,6 @@ namespace XIVComboPlugin
                 if (actionID == RDM.Verstone)
                 {
                     if (level >= 80 && (lastMove == RDM.Verflare || lastMove == RDM.Verholy)) return RDM.Scorch;
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1235)) return RDM.Verstone;
                     if (level < 62) return RDM.Jolt;
                     return RDM.Jolt2;
@@ -996,7 +954,6 @@ namespace XIVComboPlugin
                 if (actionID == RDM.Verfire)
                 {
                     if (level >= 80 && (lastMove == RDM.Verflare || lastMove == RDM.Verholy)) return RDM.Scorch;
-                    UpdateBuffAddress();
                     if (SearchBuffArray(1234)) return RDM.Verfire;
                     if (level < 62) return RDM.Jolt;
                     return RDM.Jolt2;
@@ -1011,35 +968,9 @@ namespace XIVComboPlugin
             ping = (float)(value)/1000;
         }
         */
-        private bool SearchBuffArray(short needle)
+        private bool SearchBuffArray(short effectId)
         {
-            if (activeBuffArray == IntPtr.Zero) return false;
-            for (var i = 0; i < 60; i++)
-                if (Marshal.ReadInt16(activeBuffArray + (12 * i)) == needle)
-                    return true;
-            return false;
-        }
-
-        private void UpdateBuffAddress()
-        {
-            try
-            {
-                activeBuffArray = FindBuffAddress();
-            }
-            catch (Exception)
-            {
-                //Before you're loaded in
-                activeBuffArray = IntPtr.Zero;
-            }
-        }
-
-        private unsafe IntPtr FindBuffAddress()
-        {
-            var num = Marshal.ReadIntPtr(BuffVTableAddr);
-            var step2 = (IntPtr) (Marshal.ReadInt64(num) + 0x280);
-            var step3 = Marshal.ReadIntPtr(step2);
-            var callback = Marshal.GetDelegateForFunctionPointer<getArray>(step3);
-            return (IntPtr) callback((long*) num) + 8;
+            return clientState.LocalPlayer.StatusEffects.Select(effect => effect.EffectId == effectId).Count() > 1;
         }
 
         private void PopulateDict()
